@@ -9,14 +9,16 @@ import torch.nn.init as init
 
 class GammaVAE(BaseVAE):
 
-    def __init__(self,
-                 in_channels: int,
-                 latent_dim: int,
-                 hidden_dims: List = None,
-                 gamma_shape: float = 8.,
-                 prior_shape: float = 2.0,
-                 prior_rate: float = 1.,
-                 **kwargs) -> None:
+    def __init__(
+        self,
+        in_channels: int,
+        latent_dim: int,
+        hidden_dims: List = None,
+        gamma_shape: float = 8.0,
+        prior_shape: float = 2.0,
+        prior_rate: float = 1.0,
+        **kwargs
+    ) -> None:
         super(GammaVAE, self).__init__()
         self.latent_dim = latent_dim
         self.B = gamma_shape
@@ -32,18 +34,26 @@ class GammaVAE(BaseVAE):
         for h_dim in hidden_dims:
             modules.append(
                 nn.Sequential(
-                    nn.Conv2d(in_channels, out_channels=h_dim,
-                              kernel_size=3, stride=2, padding=1),
+                    nn.Conv2d(
+                        in_channels,
+                        out_channels=h_dim,
+                        kernel_size=3,
+                        stride=2,
+                        padding=1,
+                    ),
                     nn.BatchNorm2d(h_dim),
-                    nn.LeakyReLU())
+                    nn.LeakyReLU(),
+                )
             )
             in_channels = h_dim
 
         self.encoder = nn.Sequential(*modules)
-        self.fc_mu = nn.Sequential(nn.Linear(hidden_dims[-1] * 4, latent_dim),
-                                   nn.Softmax())
-        self.fc_var = nn.Sequential(nn.Linear(hidden_dims[-1] * 4, latent_dim),
-                                    nn.Softmax())
+        self.fc_mu = nn.Sequential(
+            nn.Linear(hidden_dims[-1] * 4, latent_dim), nn.Softmax()
+        )
+        self.fc_var = nn.Sequential(
+            nn.Linear(hidden_dims[-1] * 4, latent_dim), nn.Softmax()
+        )
 
         # Build Decoder
         modules = []
@@ -55,30 +65,35 @@ class GammaVAE(BaseVAE):
         for i in range(len(hidden_dims) - 1):
             modules.append(
                 nn.Sequential(
-                    nn.ConvTranspose2d(hidden_dims[i],
-                                       hidden_dims[i + 1],
-                                       kernel_size=3,
-                                       stride=2,
-                                       padding=1,
-                                       output_padding=1),
+                    nn.ConvTranspose2d(
+                        hidden_dims[i],
+                        hidden_dims[i + 1],
+                        kernel_size=3,
+                        stride=2,
+                        padding=1,
+                        output_padding=1,
+                    ),
                     nn.BatchNorm2d(hidden_dims[i + 1]),
-                    nn.LeakyReLU())
+                    nn.LeakyReLU(),
+                )
             )
 
         self.decoder = nn.Sequential(*modules)
 
         self.final_layer = nn.Sequential(
-            nn.ConvTranspose2d(hidden_dims[-1],
-                               hidden_dims[-1],
-                               kernel_size=3,
-                               stride=2,
-                               padding=1,
-                               output_padding=1),
+            nn.ConvTranspose2d(
+                hidden_dims[-1],
+                hidden_dims[-1],
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                output_padding=1,
+            ),
             nn.BatchNorm2d(hidden_dims[-1]),
             nn.LeakyReLU(),
-            nn.Conv2d(hidden_dims[-1], out_channels=3,
-                      kernel_size=3, padding=1),
-            nn.Sigmoid())
+            nn.Conv2d(hidden_dims[-1], out_channels=3, kernel_size=3, padding=1),
+            nn.Sigmoid(),
+        )
 
         self.weight_init()
 
@@ -128,7 +143,7 @@ class GammaVAE(BaseVAE):
         z_hat = Gamma(alpha_ + self.B, torch.ones_like(alpha_)).sample()
 
         # Compute the eps ~ N(0,1) that produces z_hat
-        eps = self.inv_h_func(alpha + self.B , z_hat)
+        eps = self.inv_h_func(alpha + self.B, z_hat)
         z = self.h_func(alpha + self.B, eps)
 
         # When beta != 1, scale by beta
@@ -142,7 +157,7 @@ class GammaVAE(BaseVAE):
         :return: (Tensor)
         """
 
-        z = (alpha - 1./3.) * (1 + eps / torch.sqrt(9. * alpha - 3.))**3
+        z = (alpha - 1.0 / 3.0) * (1 + eps / torch.sqrt(9.0 * alpha - 3.0)) ** 3
         return z
 
     def inv_h_func(self, alpha: Tensor, z: Tensor) -> Tensor:
@@ -152,7 +167,9 @@ class GammaVAE(BaseVAE):
         :param z: (Tensor)
         :return: (Tensor)
         """
-        eps = torch.sqrt(9. * alpha - 3.) * ((z / (alpha - 1./3.))**(1. / 3.) - 1.)
+        eps = torch.sqrt(9.0 * alpha - 3.0) * (
+            (z / (alpha - 1.0 / 3.0)) ** (1.0 / 3.0) - 1.0
+        )
         return eps
 
     def forward(self, input: Tensor, **kwargs) -> Tensor:
@@ -166,7 +183,12 @@ class GammaVAE(BaseVAE):
     #            (beta_p - 1) * torch.digamma(beta_q) + \
     #            (beta_p - 1) * torch.log(alpha_q)
     def I_function(self, a, b, c, d):
-        return - c * d / a - b * torch.log(a) - torch.lgamma(b) + (b - 1) * (torch.digamma(d) + torch.log(c))
+        return (
+            -c * d / a
+            - b * torch.log(a)
+            - torch.lgamma(b)
+            + (b - 1) * (torch.digamma(d) + torch.log(c))
+        )
 
     def vae_gamma_kl_loss(self, a, b, c, d):
         """
@@ -181,39 +203,38 @@ class GammaVAE(BaseVAE):
         losses = self.I_function(c, d, c, d) - self.I_function(a, b, c, d)
         return torch.sum(losses, dim=1)
 
-    def loss_function(self,
-                      *args,
-                      **kwargs) -> dict:
+    def loss_function(self, *args, **kwargs) -> dict:
         recons = args[0]
         input = args[1]
         alpha = args[2]
         beta = args[3]
 
         curr_device = input.device
-        kld_weight = kwargs['M_N']  # Account for the minibatch samples from the dataset
-        recons_loss = torch.mean(F.mse_loss(recons, input, reduction = 'none'), dim = (1,2,3))
+        kld_weight = kwargs["M_N"]  # Account for the minibatch samples from the dataset
+        recons_loss = torch.mean(
+            F.mse_loss(recons, input, reduction="none"), dim=(1, 2, 3)
+        )
 
         # https://stats.stackexchange.com/questions/11646/kullback-leibler-divergence-between-two-gamma-distributions
         # alpha = 1./ alpha
-
 
         self.prior_alpha = self.prior_alpha.to(curr_device)
         self.prior_beta = self.prior_beta.to(curr_device)
 
         # kld_loss = - self.I_function(alpha, beta, self.prior_alpha, self.prior_beta)
 
-        kld_loss = self.vae_gamma_kl_loss(alpha, beta, self.prior_alpha, self.prior_beta)
+        kld_loss = self.vae_gamma_kl_loss(
+            alpha, beta, self.prior_alpha, self.prior_beta
+        )
 
         # kld_loss = torch.sum(kld_loss, dim=1)
 
         loss = recons_loss + kld_loss
-        loss = torch.mean(loss, dim = 0)
+        loss = torch.mean(loss, dim=0)
         # print(loss, recons_loss, kld_loss)
-        return {'loss': loss} #, 'Reconstruction_Loss': recons_loss, 'KLD': -kld_loss}
+        return {"loss": loss}  # , 'Reconstruction_Loss': recons_loss, 'KLD': -kld_loss}
 
-    def sample(self,
-               num_samples:int,
-               current_device: int, **kwargs) -> Tensor:
+    def sample(self, num_samples: int, current_device: int, **kwargs) -> Tensor:
         """
         Samples from the latent space and return the corresponding
         image space map.
@@ -221,7 +242,9 @@ class GammaVAE(BaseVAE):
         :param current_device: (Int) Device to run the modelSay
         :return: (Tensor)
         """
-        z = Gamma(self.prior_alpha, self.prior_beta).sample((num_samples, self.latent_dim))
+        z = Gamma(self.prior_alpha, self.prior_beta).sample(
+            (num_samples, self.latent_dim)
+        )
         z = z.squeeze().to(current_device)
 
         samples = self.decode(z)
@@ -235,6 +258,7 @@ class GammaVAE(BaseVAE):
         """
 
         return self.forward(x)[0]
+
 
 def init_(m):
     if isinstance(m, (nn.Linear, nn.Conv2d)):

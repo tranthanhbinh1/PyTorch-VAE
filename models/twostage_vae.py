@@ -7,12 +7,14 @@ from .types_ import *
 
 class TwoStageVAE(BaseVAE):
 
-    def __init__(self,
-                 in_channels: int,
-                 latent_dim: int,
-                 hidden_dims: List = None,
-                 hidden_dims2: List = None,
-                 **kwargs) -> None:
+    def __init__(
+        self,
+        in_channels: int,
+        latent_dim: int,
+        hidden_dims: List = None,
+        hidden_dims2: List = None,
+        **kwargs
+    ) -> None:
         super(TwoStageVAE, self).__init__()
 
         self.latent_dim = latent_dim
@@ -28,17 +30,22 @@ class TwoStageVAE(BaseVAE):
         for h_dim in hidden_dims:
             modules.append(
                 nn.Sequential(
-                    nn.Conv2d(in_channels, out_channels=h_dim,
-                              kernel_size= 3, stride= 2, padding  = 1),
+                    nn.Conv2d(
+                        in_channels,
+                        out_channels=h_dim,
+                        kernel_size=3,
+                        stride=2,
+                        padding=1,
+                    ),
                     nn.BatchNorm2d(h_dim),
-                    nn.LeakyReLU())
+                    nn.LeakyReLU(),
+                )
             )
             in_channels = h_dim
 
         self.encoder = nn.Sequential(*modules)
-        self.fc_mu = nn.Linear(hidden_dims[-1]*4, latent_dim)
-        self.fc_var = nn.Linear(hidden_dims[-1]*4, latent_dim)
-
+        self.fc_mu = nn.Linear(hidden_dims[-1] * 4, latent_dim)
+        self.fc_var = nn.Linear(hidden_dims[-1] * 4, latent_dim)
 
         # Build Decoder
         modules = []
@@ -48,38 +55,44 @@ class TwoStageVAE(BaseVAE):
         for i in range(len(hidden_dims) - 1):
             modules.append(
                 nn.Sequential(
-                    nn.ConvTranspose2d(hidden_dims[i],
-                                       hidden_dims[i + 1],
-                                       kernel_size=3,
-                                       stride = 2,
-                                       padding=1,
-                                       output_padding=1),
+                    nn.ConvTranspose2d(
+                        hidden_dims[i],
+                        hidden_dims[i + 1],
+                        kernel_size=3,
+                        stride=2,
+                        padding=1,
+                        output_padding=1,
+                    ),
                     nn.BatchNorm2d(hidden_dims[i + 1]),
-                    nn.LeakyReLU())
+                    nn.LeakyReLU(),
+                )
             )
         self.decoder = nn.Sequential(*modules)
 
         self.final_layer = nn.Sequential(
-                            nn.ConvTranspose2d(hidden_dims[-1],
-                                               hidden_dims[-1],
-                                               kernel_size=3,
-                                               stride=2,
-                                               padding=1,
-                                               output_padding=1),
-                            nn.BatchNorm2d(hidden_dims[-1]),
-                            nn.LeakyReLU(),
-                            nn.Conv2d(hidden_dims[-1], out_channels= 3,
-                                      kernel_size= 3, padding= 1),
-                            nn.Tanh())
+            nn.ConvTranspose2d(
+                hidden_dims[-1],
+                hidden_dims[-1],
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                output_padding=1,
+            ),
+            nn.BatchNorm2d(hidden_dims[-1]),
+            nn.LeakyReLU(),
+            nn.Conv2d(hidden_dims[-1], out_channels=3, kernel_size=3, padding=1),
+            nn.Tanh(),
+        )
 
-        #---------------------- Second VAE ---------------------------#
+        # ---------------------- Second VAE ---------------------------#
         encoder2 = []
         in_channels = self.latent_dim
         for h_dim in hidden_dims2:
-            encoder2.append(nn.Sequential(
-                                nn.Linear(in_channels, h_dim),
-                                nn.BatchNorm1d(h_dim),
-                                nn.LeakyReLU()))
+            encoder2.append(
+                nn.Sequential(
+                    nn.Linear(in_channels, h_dim), nn.BatchNorm1d(h_dim), nn.LeakyReLU()
+                )
+            )
             in_channels = h_dim
         self.encoder2 = nn.Sequential(*encoder2)
         self.fc_mu2 = nn.Linear(hidden_dims2[-1], self.latent_dim)
@@ -90,10 +103,11 @@ class TwoStageVAE(BaseVAE):
 
         in_channels = self.latent_dim
         for h_dim in hidden_dims2:
-            decoder2.append(nn.Sequential(
-                                nn.Linear(in_channels, h_dim),
-                                nn.BatchNorm1d(h_dim),
-                                nn.LeakyReLU()))
+            decoder2.append(
+                nn.Sequential(
+                    nn.Linear(in_channels, h_dim), nn.BatchNorm1d(h_dim), nn.LeakyReLU()
+                )
+            )
             in_channels = h_dim
         self.decoder2 = nn.Sequential(*decoder2)
 
@@ -143,11 +157,9 @@ class TwoStageVAE(BaseVAE):
         mu, log_var = self.encode(input)
         z = self.reparameterize(mu, log_var)
 
-        return  [self.decode(z), input, mu, log_var]
+        return [self.decode(z), input, mu, log_var]
 
-    def loss_function(self,
-                      *args,
-                      **kwargs) -> dict:
+    def loss_function(self, *args, **kwargs) -> dict:
         """
         Computes the VAE loss function.
         KL(N(\mu, \sigma), N(0, 1)) = \log \frac{1}{\sigma} + \frac{\sigma^2 + \mu^2}{2} - \frac{1}{2}
@@ -160,18 +172,17 @@ class TwoStageVAE(BaseVAE):
         mu = args[2]
         log_var = args[3]
 
-        kld_weight = kwargs['M_N'] # Account for the minibatch samples from the dataset
-        recons_loss =F.mse_loss(recons, input)
+        kld_weight = kwargs["M_N"]  # Account for the minibatch samples from the dataset
+        recons_loss = F.mse_loss(recons, input)
 
-
-        kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim = 1), dim = 0)
+        kld_loss = torch.mean(
+            -0.5 * torch.sum(1 + log_var - mu**2 - log_var.exp(), dim=1), dim=0
+        )
 
         loss = recons_loss + kld_weight * kld_loss
-        return {'loss': loss, 'Reconstruction_Loss':recons_loss, 'KLD':-kld_loss}
+        return {"loss": loss, "Reconstruction_Loss": recons_loss, "KLD": -kld_loss}
 
-    def sample(self,
-               num_samples:int,
-               current_device: int, **kwargs) -> Tensor:
+    def sample(self, num_samples: int, current_device: int, **kwargs) -> Tensor:
         """
         Samples from the latent space and return the corresponding
         image space map.
@@ -179,8 +190,7 @@ class TwoStageVAE(BaseVAE):
         :param current_device: (Int) Device to run the model
         :return: (Tensor)
         """
-        z = torch.randn(num_samples,
-                        self.latent_dim)
+        z = torch.randn(num_samples, self.latent_dim)
 
         z = z.to(current_device)
 

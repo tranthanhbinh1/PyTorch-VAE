@@ -9,24 +9,26 @@ from .types_ import *
 class JointVAE(BaseVAE):
     num_iter = 1
 
-    def __init__(self,
-                 in_channels: int,
-                 latent_dim: int,
-                 categorical_dim: int,
-                 latent_min_capacity: float =0.,
-                 latent_max_capacity: float = 25.,
-                 latent_gamma: float = 30.,
-                 latent_num_iter: int = 25000,
-                 categorical_min_capacity: float =0.,
-                 categorical_max_capacity: float = 25.,
-                 categorical_gamma: float = 30.,
-                 categorical_num_iter: int = 25000,
-                 hidden_dims: List = None,
-                 temperature: float = 0.5,
-                 anneal_rate: float = 3e-5,
-                 anneal_interval: int = 100, # every 100 batches
-                 alpha: float = 30.,
-                 **kwargs) -> None:
+    def __init__(
+        self,
+        in_channels: int,
+        latent_dim: int,
+        categorical_dim: int,
+        latent_min_capacity: float = 0.0,
+        latent_max_capacity: float = 25.0,
+        latent_gamma: float = 30.0,
+        latent_num_iter: int = 25000,
+        categorical_min_capacity: float = 0.0,
+        categorical_max_capacity: float = 25.0,
+        categorical_gamma: float = 30.0,
+        categorical_num_iter: int = 25000,
+        hidden_dims: List = None,
+        temperature: float = 0.5,
+        anneal_rate: float = 3e-5,
+        anneal_interval: int = 100,  # every 100 batches
+        alpha: float = 30.0,
+        **kwargs
+    ) -> None:
         super(JointVAE, self).__init__()
 
         self.latent_dim = latent_dim
@@ -57,56 +59,68 @@ class JointVAE(BaseVAE):
         for h_dim in hidden_dims:
             modules.append(
                 nn.Sequential(
-                    nn.Conv2d(in_channels, out_channels=h_dim,
-                              kernel_size= 3, stride= 2, padding  = 1),
+                    nn.Conv2d(
+                        in_channels,
+                        out_channels=h_dim,
+                        kernel_size=3,
+                        stride=2,
+                        padding=1,
+                    ),
                     nn.BatchNorm2d(h_dim),
-                    nn.LeakyReLU())
+                    nn.LeakyReLU(),
+                )
             )
             in_channels = h_dim
 
         self.encoder = nn.Sequential(*modules)
-        self.fc_mu = nn.Linear(hidden_dims[-1]*4, self.latent_dim)
-        self.fc_var = nn.Linear(hidden_dims[-1]*4, self.latent_dim)
-        self.fc_z = nn.Linear(hidden_dims[-1]*4, self.categorical_dim)
+        self.fc_mu = nn.Linear(hidden_dims[-1] * 4, self.latent_dim)
+        self.fc_var = nn.Linear(hidden_dims[-1] * 4, self.latent_dim)
+        self.fc_z = nn.Linear(hidden_dims[-1] * 4, self.categorical_dim)
 
         # Build Decoder
         modules = []
 
-        self.decoder_input = nn.Linear(self.latent_dim + self.categorical_dim,
-                                       hidden_dims[-1] * 4)
+        self.decoder_input = nn.Linear(
+            self.latent_dim + self.categorical_dim, hidden_dims[-1] * 4
+        )
 
         hidden_dims.reverse()
 
         for i in range(len(hidden_dims) - 1):
             modules.append(
                 nn.Sequential(
-                    nn.ConvTranspose2d(hidden_dims[i],
-                                       hidden_dims[i + 1],
-                                       kernel_size=3,
-                                       stride = 2,
-                                       padding=1,
-                                       output_padding=1),
+                    nn.ConvTranspose2d(
+                        hidden_dims[i],
+                        hidden_dims[i + 1],
+                        kernel_size=3,
+                        stride=2,
+                        padding=1,
+                        output_padding=1,
+                    ),
                     nn.BatchNorm2d(hidden_dims[i + 1]),
-                    nn.LeakyReLU())
+                    nn.LeakyReLU(),
+                )
             )
-
-
 
         self.decoder = nn.Sequential(*modules)
 
         self.final_layer = nn.Sequential(
-                            nn.ConvTranspose2d(hidden_dims[-1],
-                                               hidden_dims[-1],
-                                               kernel_size=3,
-                                               stride=2,
-                                               padding=1,
-                                               output_padding=1),
-                            nn.BatchNorm2d(hidden_dims[-1]),
-                            nn.LeakyReLU(),
-                            nn.Conv2d(hidden_dims[-1], out_channels= 3,
-                                      kernel_size= 3, padding= 1),
-                            nn.Tanh())
-        self.sampling_dist = torch.distributions.OneHotCategorical(1. / categorical_dim * torch.ones((self.categorical_dim, 1)))
+            nn.ConvTranspose2d(
+                hidden_dims[-1],
+                hidden_dims[-1],
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                output_padding=1,
+            ),
+            nn.BatchNorm2d(hidden_dims[-1]),
+            nn.LeakyReLU(),
+            nn.Conv2d(hidden_dims[-1], out_channels=3, kernel_size=3, padding=1),
+            nn.Tanh(),
+        )
+        self.sampling_dist = torch.distributions.OneHotCategorical(
+            1.0 / categorical_dim * torch.ones((self.categorical_dim, 1))
+        )
 
     def encode(self, input: Tensor) -> List[Tensor]:
         """
@@ -139,11 +153,9 @@ class JointVAE(BaseVAE):
         result = self.final_layer(result)
         return result
 
-    def reparameterize(self,
-                       mu: Tensor,
-                       log_var: Tensor,
-                       q: Tensor,
-                       eps:float = 1e-7) -> Tensor:
+    def reparameterize(
+        self, mu: Tensor, log_var: Tensor, q: Tensor, eps: float = 1e-7
+    ) -> Tensor:
         """
         Gumbel-softmax trick to sample from Categorical Distribution
         :param mu: (Tensor) mean of the latent Gaussian  [B x D]
@@ -158,7 +170,7 @@ class JointVAE(BaseVAE):
 
         # Sample from Gumbel
         u = torch.rand_like(q)
-        g = - torch.log(- torch.log(u + eps) + eps)
+        g = -torch.log(-torch.log(u + eps) + eps)
 
         # Gumbel-Softmax sample
         s = F.softmax((q + g) / self.temp, dim=-1)
@@ -166,15 +178,12 @@ class JointVAE(BaseVAE):
 
         return torch.cat([z, s], dim=1)
 
-
     def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
         mu, log_var, q = self.encode(input)
         z = self.reparameterize(mu, log_var, q)
-        return  [self.decode(z), input, q, mu, log_var]
+        return [self.decode(z), input, q, mu, log_var]
 
-    def loss_function(self,
-                      *args,
-                      **kwargs) -> dict:
+    def loss_function(self, *args, **kwargs) -> dict:
         """
         Computes the VAE loss function.
         KL(N(\mu, \sigma), N(0, 1)) = \log \frac{1}{\sigma} + \frac{\sigma^2 + \mu^2}{2} - \frac{1}{2}
@@ -188,22 +197,23 @@ class JointVAE(BaseVAE):
         mu = args[3]
         log_var = args[4]
 
-        q_p = F.softmax(q, dim=-1) # Convert the categorical codes into probabilities
+        q_p = F.softmax(q, dim=-1)  # Convert the categorical codes into probabilities
 
-
-        kld_weight = kwargs['M_N'] # Account for the minibatch samples from the dataset
-        batch_idx = kwargs['batch_idx']
+        kld_weight = kwargs["M_N"]  # Account for the minibatch samples from the dataset
+        batch_idx = kwargs["batch_idx"]
 
         # Anneal the temperature at regular intervals
         if batch_idx % self.anneal_interval == 0 and self.training:
-            self.temp = np.maximum(self.temp * np.exp(- self.anneal_rate * batch_idx),
-                                   self.min_temp)
+            self.temp = np.maximum(
+                self.temp * np.exp(-self.anneal_rate * batch_idx), self.min_temp
+            )
 
-        recons_loss =F.mse_loss(recons, input, reduction='mean')
+        recons_loss = F.mse_loss(recons, input, reduction="mean")
 
         # Adaptively increase the discrinimator capacity
-        disc_curr = (self.disc_max - self.disc_min) * \
-                    self.num_iter/ float(self.disc_iter) + self.disc_min
+        disc_curr = (self.disc_max - self.disc_min) * self.num_iter / float(
+            self.disc_iter
+        ) + self.disc_min
         disc_curr = min(disc_curr, np.log(self.categorical_dim))
 
         # KL divergence between gumbel-softmax distribution
@@ -212,30 +222,34 @@ class JointVAE(BaseVAE):
         # Entropy of the logits
         h1 = q_p * torch.log(q_p + eps)
         # Cross entropy with the categorical distribution
-        h2 = q_p * np.log(1. / self.categorical_dim + eps)
-        kld_disc_loss = torch.mean(torch.sum(h1 - h2, dim =1), dim=0)
+        h2 = q_p * np.log(1.0 / self.categorical_dim + eps)
+        kld_disc_loss = torch.mean(torch.sum(h1 - h2, dim=1), dim=0)
 
         # Compute Continuous loss
         # Adaptively increase the continuous capacity
-        cont_curr = (self.cont_max - self.cont_min) * \
-                    self.num_iter/ float(self.cont_iter) + self.cont_min
+        cont_curr = (self.cont_max - self.cont_min) * self.num_iter / float(
+            self.cont_iter
+        ) + self.cont_min
         cont_curr = min(cont_curr, self.cont_max)
 
-        kld_cont_loss = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(),
-                                                    dim=1),
-                                   dim=0)
-        capacity_loss = self.disc_gamma * torch.abs(disc_curr - kld_disc_loss) + \
-                        self.cont_gamma * torch.abs(cont_curr - kld_cont_loss)
+        kld_cont_loss = torch.mean(
+            -0.5 * torch.sum(1 + log_var - mu**2 - log_var.exp(), dim=1), dim=0
+        )
+        capacity_loss = self.disc_gamma * torch.abs(
+            disc_curr - kld_disc_loss
+        ) + self.cont_gamma * torch.abs(cont_curr - kld_cont_loss)
         # kld_weight = 1.2
         loss = self.alpha * recons_loss + kld_weight * capacity_loss
 
         if self.training:
             self.num_iter += 1
-        return {'loss': loss, 'Reconstruction_Loss':recons_loss, 'Capacity_Loss':capacity_loss}
+        return {
+            "loss": loss,
+            "Reconstruction_Loss": recons_loss,
+            "Capacity_Loss": capacity_loss,
+        }
 
-    def sample(self,
-               num_samples:int,
-               current_device: int, **kwargs) -> Tensor:
+    def sample(self, num_samples: int, current_device: int, **kwargs) -> Tensor:
         """
         Samples from the latent space and return the corresponding
         image space map.
@@ -244,17 +258,16 @@ class JointVAE(BaseVAE):
         :return: (Tensor)
         """
         # [S x D]
-        z = torch.randn(num_samples,
-                        self.latent_dim)
+        z = torch.randn(num_samples, self.latent_dim)
 
         M = num_samples
         np_y = np.zeros((M, self.categorical_dim), dtype=np.float32)
         np_y[range(M), np.random.choice(self.categorical_dim, M)] = 1
-        np_y = np.reshape(np_y, [M , self.categorical_dim])
+        np_y = np.reshape(np_y, [M, self.categorical_dim])
         q = torch.from_numpy(np_y)
 
         # z = self.sampling_dist.sample((num_samples * self.latent_dim, ))
-        z = torch.cat([z, q], dim = 1).to(current_device)
+        z = torch.cat([z, q], dim=1).to(current_device)
         samples = self.decode(z)
         return samples
 
